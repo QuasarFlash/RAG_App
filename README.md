@@ -58,4 +58,6 @@ Ensure your folder structure resembles this:
 ```
 ### Step 2: Project Setup
 ```docker compuse up --build```
+### Step 3: Open App in Browser
+#### http://localhost:8501
 
