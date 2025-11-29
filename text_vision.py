@@ -1,3 +1,4 @@
+import uuid
 import streamlit as st
 import os
 import shutil
@@ -6,7 +7,7 @@ import time
 import concurrent.futures
 from glob import glob
 import ollama
-
+from db_handler import ChatDatabase
 # LangChain & Milvus
 from langchain_milvus import Milvus
 from langchain_text_splitters import RecursiveCharacterTextSplitter
@@ -29,12 +30,14 @@ st.set_page_config(page_title="TAD LAB Turbo RAG", layout="wide", page_icon="⚡
 UPLOAD_DIR = "./uploaded_docs"
 DB_URI = "./vector_database/vector_database.db"
 OLLAMA_HOST = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
-
+IMAGES_DIR = "./chat_images"
 # Ensure directories exist
 os.makedirs(UPLOAD_DIR, exist_ok=True)
+os.makedirs(IMAGES_DIR, exist_ok=True)
+
 
 # ===========================
-# 1. Helper Functions
+# Helper Functions
 # ===========================
 def robust_rmtree(path, max_retries=5, delay=1):
     """Robustly remove a directory, handling Windows file locks."""
@@ -48,7 +51,7 @@ def robust_rmtree(path, max_retries=5, delay=1):
     return False
 
 # ===========================
-# 2. Cached Resources (The Efficiency Core)
+# Cached Resources (The Efficiency Core)
 # ===========================
 @st.cache_resource(show_spinner="Connecting to Knowledge Base...")
 def get_vector_store():
@@ -102,7 +105,7 @@ def get_docling_converter(enable_ocr=False):
     )
 
 # ===========================
-# 3. Parallel Processing Backend (Text RAG)
+# Parallel Processing Backend (Text RAG)
 # ===========================
 class RAGBackend:
     def __init__(self):
@@ -209,7 +212,7 @@ class RAGBackend:
             return f"Error clearing DB: {e}"
 
 # ===========================
-# 4. Vision Backend (Images)
+# Vision Backend (Images)
 # ===========================
 class VisionBackend:
     def __init__(self):
@@ -232,7 +235,7 @@ class VisionBackend:
         return response['message']['content']
 
 # ===========================
-# 5. Main Streamlit Interface
+# Main Streamlit Interface
 # ===========================
 
 if "messages" not in st.session_state: st.session_state.messages = []
@@ -240,101 +243,179 @@ if "messages" not in st.session_state: st.session_state.messages = []
 # Initialize Backends
 rag_backend = RAGBackend()
 vision_backend = VisionBackend()
+chatHistory_backend = ChatDatabase(db_path="./chat_history/chat_history.db")
+# ===========================
+# Session State Logic
+# ===========================
 
+# Ensure current session state
+if "current_session_id" not in st.session_state:
+    sessions = chatHistory_backend.get_all_sessions()
+    if sessions:
+        st.session_state.current_session_id = sessions[0]["id"]
+    else:
+        st.session_state.current_session_id = chatHistory_backend.create_session()
+
+# ===========================
+# Sidebar UI
+# ===========================
 with st.sidebar:
-    st.header("⚡ Turbo Configuration")
+    st.header("🗂️ Manage Chats")
     
-    # 1. Mode Selector (New!)
-    chat_mode = st.radio("Select Capability", ["🤖 Text RAG (PDFs)", "👁️ Vision Chat (Images)"])
+    # New Chat Button
+    if st.button("➕ New Chat", use_container_width=True):
+        new_id = chatHistory_backend.create_session()
+        st.session_state.current_session_id = new_id
+        st.rerun()
+
+    # History Dropdown
+    all_sessions = chatHistory_backend.get_all_sessions()
+    session_titles = [s["title"] for s in all_sessions]
+    session_ids = [s["id"] for s in all_sessions]
+    # 2. Search Bar (NEW)
+    search_query = st.text_input("🔍 Search History", placeholder="Type to find chats...")
+
+    # 3. Logic: Get filtered or all sessions
+    if search_query:
+        # DB Search
+        available_sessions = chatHistory_backend.search_sessions(search_query)
+    else:
+        # Default Load
+        available_sessions = chatHistory_backend.get_all_sessions()
+
+    # 4. Handle Empty Search Results
+    if not available_sessions:
+        st.caption("No matching chats found.")
+        # If no results, we keep the current ID if possible, or don't allow switching
+        session_titles = []
+        session_ids = []
+    else:
+        session_titles = [s["title"] for s in available_sessions]
+        session_ids = [s["id"] for s in available_sessions]
+
+    # 5. History Dropdown (Smart Selection)
+    if session_ids:
+        # Try to keep the current selection active in the dropdown if it exists in the search results
+        try:
+            curr_idx = session_ids.index(st.session_state.current_session_id)
+        except ValueError:
+            curr_idx = 0 # Default to top result if current chat is not in search results
+
+        selected_idx = st.selectbox(
+            "History", 
+            range(len(session_titles)), 
+            format_func=lambda x: session_titles[x], 
+            index=curr_idx, 
+            key="history_select"
+        )
+        
+        # Update State
+        st.session_state.current_session_id = session_ids[selected_idx]
+    # try:
+    #     curr_idx = session_ids.index(st.session_state.current_session_id)
+    # except ValueError:
+    #     curr_idx = 0
+
+    # if session_ids:
+    #     selected_idx = st.selectbox("History", range(len(session_titles)), 
+    #                                 format_func=lambda x: session_titles[x], 
+    #                                 index=curr_idx, key="history_select")
+    #     st.session_state.current_session_id = session_ids[selected_idx]
+    
+    # Delete Button
+    if st.button("🗑️ Delete Current Chat"):
+        if st.session_state.current_session_id:
+            chatHistory_backend.delete_session(st.session_state.current_session_id)
+            # Reset to the most recent chat available
+            remaining = chatHistory_backend.get_all_sessions()
+            if remaining:
+                st.session_state.current_session_id = remaining[0]["id"]
+            else:
+                st.session_state.current_session_id = chatHistory_backend.create_session()
+            st.rerun()
+
     st.divider()
+    st.header("⚙️ Settings")
+    chat_mode = st.radio("Mode", ["🤖 Text RAG", "👁️ Vision Chat"])
     
-    # --- Mode A: Text RAG ---
-    if chat_mode == "🤖 Text RAG (PDFs)":
-        text_model = st.selectbox("Text Model", ['gemma3:latest'], index=0)
-        
-        st.subheader("Knowledge Base")
-        # OCR Toggle (Efficiency Boost)
-        use_ocr = st.checkbox("Enable OCR (Slower)", value=False, help="Uncheck for digital PDFs to speed up processing by 10x")
-        
-        uploaded_files = st.file_uploader("Upload Documents", accept_multiple_files=True, type=['pdf','md','txt'])
+    if chat_mode == "🤖 Text RAG":
+        text_model = st.selectbox("Model", ['gemma3:latest'], index=0)
+        use_ocr = st.checkbox("Enable OCR", value=False)
+        uploaded_files = st.file_uploader("Docs", accept_multiple_files=True, type=['pdf','md','txt','csv','png','jpg','jpeg'])
         status_area = st.empty()
         
-        if st.button("Process & Index"):
+        if st.button("Index Docs"):
             if uploaded_files:
-                # Robust clean
                 robust_rmtree(UPLOAD_DIR)
                 os.makedirs(UPLOAD_DIR, exist_ok=True)
-                
-                # Save
                 for uf in uploaded_files:
                     with open(os.path.join(UPLOAD_DIR, uf.name), "wb") as f: f.write(uf.getbuffer())
-                
-                # Process Parallel
-                msg = rag_backend.process_and_index_parallel(UPLOAD_DIR, status_area, enable_ocr=use_ocr)
-                st.success(msg)
+                st.success(rag_backend.process_and_index_parallel(UPLOAD_DIR, status_area, use_ocr))
         
-        if st.button("Clear Database"):
-            st.warning(rag_backend.clear_database())
+        if st.button("Clear Vector DB"): st.warning(rag_backend.clear_database())
 
-    # --- Mode B: Vision Chat ---
-    elif chat_mode == "👁️ Vision Chat (Images)":
+    elif chat_mode == "👁️ Vision Chat":
         vision_model = st.selectbox("Vision Model", ['gemma3:latest'], index=0)
-        
-        st.subheader("Image Input")
-        uploaded_image = st.file_uploader("Upload Image", type=['png','jpg','jpeg'], key="vision_up")
-        if uploaded_image:
-            st.image(uploaded_image, caption="Analysis Target", use_container_width=True)
+        uploaded_image = st.file_uploader("Image", type=['png','jpg','jpeg'], key="v_upload")
+        if uploaded_image: st.image(uploaded_image, width=200)
 
+# ===========================
 # Main Chat Loop
-st.title("🤖 TAD LAB Turbo RAG")
+# ===========================
 
-# Display History
-for msg in st.session_state.messages:
+# Load messages for the CURRENT session from SQLite
+current_messages = chatHistory_backend.get_messages(st.session_state.current_session_id)
+
+st.title("⚡ Turbo Multimodal RAG")
+
+for msg in current_messages:
     with st.chat_message(msg["role"]):
-        # Show image if present in history
-        if "image_data" in msg:
-            st.image(msg["image_data"], width=250)
+        # Load image from DISK if exists
+        if msg["image_path"] and os.path.exists(msg["image_path"]):
+            st.image(msg["image_path"], width=300)
         st.markdown(msg["content"])
 
-# Handle Input
 if prompt := st.chat_input("Ask a question..."):
     
-    # Logic for Vision Mode
-    if chat_mode == "👁️ Vision Chat (Images)" and uploaded_image:
-        # User Bubble
-        st.session_state.messages.append({"role": "user", "content": prompt, "image_data": uploaded_image.getvalue()})
+    # Vision Logic
+    if chat_mode == "👁️ Vision Chat" and uploaded_image:
+        # 1. Save Image to Disk
+        img_filename = f"{uuid.uuid4()}.png"
+        img_path = os.path.join(IMAGES_DIR, img_filename)
+        with open(img_path, "wb") as f: f.write(uploaded_image.getbuffer())
+        
+        # 2. Save User Msg to DB
+        chatHistory_backend.add_message(st.session_state.current_session_id, "user", prompt, img_path)
+        
+        # 3. Show immediately (optimistic UI)
         with st.chat_message("user"):
             st.image(uploaded_image, width=250)
             st.markdown(prompt)
-        
-        # Assistant Bubble
+
+        # 4. Generate Response
         with st.chat_message("assistant"):
-            with st.spinner("Analyzing image..."):
+            with st.spinner("Analyzing..."):
                 try:
                     resp = vision_backend.query_vision(prompt, uploaded_image, vision_model)
                     st.markdown(resp)
-                    st.session_state.messages.append({"role": "assistant", "content": resp})
-                except Exception as e:
-                    st.error(f"Vision Error: {e}")
+                    chatHistory_backend.add_message(st.session_state.current_session_id, "assistant", resp)
+                    st.rerun()
+                except Exception as e: st.error(f"Error: {e}")
 
-    # Logic for Text RAG Mode
-    elif chat_mode == "🤖 Text RAG (PDFs)":
-        # User Bubble
-        st.session_state.messages.append({"role": "user", "content": prompt})
-        with st.chat_message("user"):
-            st.markdown(prompt)
-        
-        # Assistant Bubble
+    # Text Logic
+    elif chat_mode == "🤖 Text RAG":
+        chatHistory_backend.add_message(st.session_state.current_session_id, "user", prompt)
+        with st.chat_message("user"): st.markdown(prompt)
+
         with st.chat_message("assistant"):
             with st.spinner("Thinking..."):
                 try:
                     resp = rag_backend.query_text_rag(prompt, text_model)
-                    # Clean <think> tags if using Deepseek
                     clean_resp = resp.split("</think>")[-1].strip() if "</think>" in resp else resp
                     st.markdown(clean_resp)
-                    st.session_state.messages.append({"role": "assistant", "content": clean_resp})
-                except Exception as e:
-                    st.error(f"RAG Error: {e}")
+                    chatHistory_backend.add_message(st.session_state.current_session_id, "assistant", clean_resp)
+                    st.rerun()
+                except Exception as e: st.error(f"Error: {e}")
     
     else:
-        st.warning("Please upload an image for Vision Chat, or switch to Text RAG.")
+        st.warning("Please upload an image for Vision Chat.")

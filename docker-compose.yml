@@ -35,11 +35,14 @@ services:
     environment:
       - OLLAMA_BASE_URL=http://ollama:11434
     volumes:
-      # 1. Persist Uploaded Files
+      # Persist Uploaded Files
       - ./uploaded_docs:/app/uploaded_docs
-      # 2. Persist the Vector Database (CRITICAL FIX)
-      # Maps the local file to the file created by app.py
+      # Persist the Vector Database
       - ./vector_database:/app/vector_database.db
+      # Persist the SQLite History
+      - ./chat_history:/app/chat_history.db
+      # Persist the Images folder
+      - ./chat_images:/app/chat_images
     depends_on:
       ollama:
         condition: service_healthy
