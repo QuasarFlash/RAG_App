@@ -197,7 +197,7 @@ with st.sidebar:
     uploaded_files = st.file_uploader(
         "Upload Documents (PDF, MD, TXT)", 
         accept_multiple_files=True,
-        type=['pdf', 'md', 'txt']
+        type=['pdf', 'md', 'txt','jpg', 'jpeg', 'png']
     )
     
     if st.button("Process & Index Documents"):
