@@ -1,5 +1,5 @@
 services:
-  # 1. The Ollama Service (The Brain)
+  # 1. The Ollama Service
   ollama:
     image: ollama/ollama:latest
     container_name: tad_ollama
@@ -11,12 +11,13 @@ services:
       - ollama_network
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "ollama", "list"]
-      interval: 30s
+      test: ["CMD-SHELL", "ollama list || exit 1"]
+      interval: 20s
       timeout: 10s
       retries: 5
-      start_period: 30s
-    # Uncomment the section below if you have an NVIDIA GPU and nvidia-container-toolkit installed
+      start_period: 20s
+    # ONLY Keep this section if you have an NVIDIA GPU. 
+    # If on Mac or Standard PC, COMMENT THIS OUT or it will crash.
     deploy:
       resources:
         reservations:
@@ -25,7 +26,7 @@ services:
               count: 1
               capabilities: [gpu]
 
-  # 2. The Streamlit Application (The UI)
+  # 2. The Streamlit Application
   app:
     build: .
     container_name: tad_app
@@ -34,11 +35,15 @@ services:
     environment:
       - OLLAMA_BASE_URL=http://ollama:11434
     volumes:
+      # 1. Persist Uploaded Files
       - ./uploaded_docs:/app/uploaded_docs
-      - ./milvus_data:/app/milvus_data
+      # 2. Persist the Vector Database (CRITICAL FIX)
+      # Maps the local file to the file created by app.py
+      - ./vector_database:/app/vector_database.db
     depends_on:
       ollama:
         condition: service_healthy
+        # REMOVED: "restart: true" (This is invalid syntax here)
     networks:
       - ollama_network
 

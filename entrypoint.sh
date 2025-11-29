@@ -20,9 +20,9 @@ curl -X POST $OLLAMA_HOST_URL/api/pull -d '{"name": "nomic-embed-text"}'
 # 2. Pull Default Chat Model (Example: deepseek-r1:7b)
 # Note: pulling large models can take time on first run
 echo "Pulling gemma3:4b..."
-curl -X POST $OLLAMA_HOST_URL/api/pull -d '{"name": "gemma3:latest"}'
+curl -X POST $OLLAMA_HOST_URL/api/pull -d '{"name": "gemma3:latest", "stream": false}'
 
 echo "Models ready. Starting Streamlit..."
 
 # Start the app
-streamlit run app.py --server.address=0.0.0.0
+streamlit run text_vision.py --server.address=0.0.0.0
