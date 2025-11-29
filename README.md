@@ -28,6 +28,17 @@ A local, containerized AI assistant capable of **Multimodal Reasoning**. It allo
 ### Prerequisites
 * **Docker and Docker compose** installed and running.
 * *(Optional)* NVIDIA GPU with updated drivers (for faster performance).
+  
+  **Comment out in docker-compose.yml if no GPU or Running on MAC**
+  ```
+  deploy:
+    resources:
+      reservations:
+        devices:
+          - driver: nvidia
+            count: 1
+            capabilities: [gpu]
+  ```
 
 ### Step 1: Project Setup
 ```git clone https://github.com/QuasarFlash/RAG_App.git```
