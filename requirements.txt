@@ -1,0 +1,16 @@
+streamlit
+langchain-community
+langchain-core
+langchain-ollama
+langchain-milvus
+langchain-text-splitters
+langchain_docling
+langchain-classic
+docling
+pymilvus
+pymilvus[milvus_lite]
+ollama
+sentence-transformers
+huggingface-hub
+markdown
+easyocr

@@ -1,0 +1,50 @@
+services:
+  # 1. The Ollama Service (The Brain)
+  ollama:
+    image: ollama/ollama:latest
+    container_name: tad_ollama
+    volumes:
+      - ollama_data:/root/.ollama
+    ports:
+      - "11434:11434"
+    networks:
+      - ollama_network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "test -f /tmp/ollama_ready && bash -c '</dev/tcp/localhost/11434'"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 15s
+    # Uncomment the section below if you have an NVIDIA GPU and nvidia-container-toolkit installed
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+  # 2. The Streamlit Application (The UI)
+  app:
+    build: .
+    container_name: tad_app
+    ports:
+      - "8501:8501"
+    environment:
+      - OLLAMA_BASE_URL=http://ollama:11434
+    volumes:
+      - ./uploaded_docs:/app/uploaded_docs
+      - ./milvus_data:/app/milvus_data
+    depends_on:
+      ollama:
+        condition: service_healthy
+    networks:
+      - ollama_network
+
+volumes:
+  ollama_data: {}
+
+networks:
+  ollama_network:
+    driver: bridge
