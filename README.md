@@ -47,7 +47,7 @@ A local, containerized AI assistant capable of **Multimodal Reasoning**. It allo
 ### Step 1: Project Setup
 ```git clone https://github.com/QuasarFlash/RAG_App.git```
 
-Ensure your folder structure looks like this:
+Ensure your folder structure resembles this:
 ```text
 .
 ├── app.py                 # The Streamlit Application
@@ -55,3 +55,7 @@ Ensure your folder structure looks like this:
 ├── Dockerfile             # App environment definition
 ├── entrypoint.sh          # Startup script
 └── requirements.txt       # Python dependencies
+```
+### Step 2: Project Setup
+```docker compuse up --build```
+
