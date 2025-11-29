@@ -4,6 +4,10 @@
 A local, containerized AI assistant capable of **Multimodal Reasoning**. It allows you to chat with your documents (PDF, MD, TXT) using RAG (Retrieval Augmented Generation) and analyze images using Vision Language Models, all running locally on your machine via Docker and Ollama.
 
 ---
+## Look of App:
+
+<img src="HomePage.png" alt="Project Screenshot" width="800"/>
+
 
 ## 🚀 What Can Be Accomplished?
 
